@@ -1,120 +1,65 @@
 module Main where
 
 import Prelude
-import Prim.RowList as RL -- (RowList, Cons, Nil, class RowToList)
---import Prim.Row as Row
 import Type.Row as Row
 import Type.Row
 import Type.RowList
 import Data.Symbol (class IsSymbol, reflectSymbol)
 import Record as R
 import Type.Proxy
+import Data.Foldable
+import Data.FoldableWithIndex (foldrWithIndex)
+import Data.List as List
+import Data.Array as Ary
 
 import Effect (Effect)
-import Effect.Console (log)
 
-data True
-data False
+data ValidationResult a = FieldError String
+                        | ChildrenErrors (Array { index :: Int, childErrors :: a })
+                        | Ok
 
-data ValidationResult = Error String | Ok
+removeOks = Ary.filter (not <<< isOk)
+  where isOk Ok = true
+        isOk _ = false
 
-instance Show ValidationResult where
-  show (Error s) = s
-  show _ = ""
+instance Show a => Show (ValidationResult a) where
+  show (FieldError s) = "Field error: " <> s
+  show (ChildrenErrors ary) = "Children errors: " <> show ary
+  show _ = "ok"
 
-type Rules a = Array (a -> ValidationResult)
+derive instance Eq a => Eq (ValidationResult a)
 
-class IsRecord (a :: Type) bool | a -> bool
+type Rules a b = Array (a -> ValidationResult b)
 
-instance IsRecord (Record row) True
-else instance IsRecord a False
+class ThreeWay :: forall validatorRL inputRL outputRL.
+                  validatorRL -> inputRL -> outputRL -> Constraint
+class ThreeWay validatorRL inputRL outputRL | validatorRL inputRL -> outputRL
 
-class PermutedSubRL :: forall rl1 rl2. rl1 -> rl2 -> Constraint
-class PermutedSubRL rl1 rl2
+instance ThreeWay Nil a Nil
 
--- {} < everything
-instance PermutedSubRL Nil rl
+instance ( IsSymbol l
+         , ThreeWay validatorRL inputRL outputRL
+         , RowToList validatorRow validatorRL
+         , RowToList inputRow inputRL
+         , RowToList outputRow outputRL
+         )
+        => ThreeWay (Cons l (Record validatorRow) Nil)
+                    (Cons l (Record inputRow) anything)
+                    (Cons l (Record outputRow) Nil)
 
--- if a < b and are records, then { x :: a } < { x :: b } + r
-else instance ( IsSymbol l
-              , RowToList ty1 rl1
-              , RowToList ty2 rl2
-              , PermutedSubRL rl1 rl2 )
-             => PermutedSubRL (Cons l (Record ty1) Nil)
-                              (Cons l (Record ty2) trash)
+else instance ( IsSymbol l )
+             => ThreeWay (Cons l (Rules inputTy outputTy) Nil)
+                         (Cons l (Array inputTy) anything)
+                         (Cons l outputTy Nil)
 
--- { x :: Rules a } < { x :: a } + r for non-record a, b
-else instance ( IsSymbol l
-              , IsRecord a False )
-             => PermutedSubRL (Cons l (Rules a) Nil) (Cons l a rest)
-
--- if { x :: a } < r, then { x :: a } < { y :: b } + r
 else instance ( IsSymbol l1
-              , PermutedSubRL (Cons l1 a Nil) rl
-              , IsSymbol l2 )
-             => PermutedSubRL (Cons l1 a Nil) (Cons l2 b rl)
-
--- if r1 < r2 and { x :: a } < r2, then { x :: a } + r1 < r2
-else instance ( IsSymbol l
-              , PermutedSubRL (Cons l a Nil) rl2
-              , PermutedSubRL rl1 rl2 )
-             => PermutedSubRL (Cons l a rl1) rl2
-
-
-greaterThan :: Int -> Int -> ValidationResult
-greaterThan x y = if x > y then Ok else Error "too small"
-
-lessThan :: Int -> Int -> ValidationResult
-lessThan x y = if x < y then Ok else Error "too big"
-
-notEmpty :: String -> ValidationResult
-notEmpty s = if s == "" then Error "empty" else Ok
-
-
-each validator xs = map validator xs
-
-
-type Student = { studentId :: Int, name :: String, age :: Int }
-type School  = { name :: String
-                , schoolId :: Int
---                , students :: Array Student
-                }
-
-
-
-type Errs = Array ValidationResult
-
-class RLErrorsMap a b | a -> b
-
-instance RLErrorsMap Nil Nil
-
-else instance ( IsSymbol l
-              , RowToList row1 rl1
-              , RowToList row2 rl2
-              , RLErrorsMap rl1 rl2
-              , RLErrorsMap rest1 rest2 )
-             => RLErrorsMap (Cons l (Record row1) rest1) (Cons l (Record row2) rest2)
-
-else instance ( IsSymbol l
-              , RLErrorsMap rl1 rl2 )
-             => RLErrorsMap (Cons l a rl1) (Cons l Errs rl2)
-
--- else instance ( IsSymbol l
---               , RLErrorsMap (Cons l a Nil) rl
---               , RLErrorsMap rest rl )
---              => RLErrorsMap (Cons l a rest) (Cons l String rest)
-
-gogo :: forall rl1 rl2 row1 row2. RLErrorsMap rl1 rl2
-                               => RowToList row1 rl1
-                               => RowToList row2 rl2
-                               => Record row1
-                               -> Record row2
-                               -> Int
-gogo _ _ = 5
-
-hi :: Int
-hi = gogo {a: 2, x: {w: 4, y: 4, z: 6}} {x: {z: [Ok], w: [Ok], y: [Ok]}, a: [Ok]}
-
+              , IsSymbol l2
+              , ThreeWay (Cons l1 a Nil) rest (Cons l1 c Nil)
+              , ThreeWay validatorRestRL inputRestRL outputRestRL
+              )
+             => ThreeWay (Cons l1 a validatorRestRL)
+                         (Cons l2 b inputRestRL)
+                         (Cons l1 c outputRestRL)
 
 
 class GValidate (validatorRL :: RowList Type)
@@ -149,7 +94,7 @@ else instance
   , RowToList subValidatorRow subValidatorRL
   , RowToList validatorRowRest validatorRLRest
   , Lacks l validatorRowRest
-  , Cons l (Record subValidatorRow ) validatorRowRest validatorRow
+  , Cons l (Record subValidatorRow) validatorRowRest validatorRow
 
   , Cons l (Record subInputRow) inputRowRest inputRow
   , RowToList subInputRow subInputRL
@@ -209,16 +154,16 @@ else instance
 
   , IsSymbol l
   , RowToList validatorRow validatorRL
-  , RowToList validatorRow (Cons l (Rules ty) validatorRLRest)
+  , RowToList validatorRow (Cons l (Rules ty tyOut) validatorRLRest) -- should tyOut by tyOut?
   , RowToList validatorRowRest validatorRLRest
   , Lacks l validatorRowRest
-  , Cons l (Rules ty) validatorRowRest validatorRow
+  , Cons l (Rules ty tyOut) validatorRowRest validatorRow
 
   , RowToList outputRow outputRL
-  , RowToList outputRow (Cons l (Array ValidationResult) outputRLRest)
+  , RowToList outputRow (Cons l (Array (ValidationResult tyOut)) outputRLRest)
   , RowToList outputRowRest outputRLRest
   , Lacks l outputRowRest
-  , Cons l (Array ValidationResult) outputRowRest outputRow
+  , Cons l (Array (ValidationResult tyOut)) outputRowRest outputRow
 
   , GValidate validatorRLRest
               validatorRowRest
@@ -236,7 +181,7 @@ else instance
         fieldName = reflectSymbol proxy
         fieldValue = R.get proxy input
         fieldValidators = R.get proxy validator
-        fieldErrors = map (_ $ fieldValue) fieldValidators
+        fieldErrors = map (_ $ fieldValue) fieldValidators # removeOks
         validatorRest = R.delete proxy validator
         restErrors = gValidate validatorRest
                                (Proxy :: Proxy validatorRLRest )
@@ -249,8 +194,6 @@ validate :: forall validatorRow validatorRL inputRow inputRL outputRow outputRL.
             RowToList validatorRow validatorRL
          => RowToList inputRow inputRL
          => RowToList outputRow outputRL
-         => PermutedSubRL validatorRL inputRL
-         => RLErrorsMap validatorRL outputRL
          => GValidate validatorRL validatorRow inputRL inputRow outputRL outputRow
          => Record validatorRow
          -> Record inputRow
@@ -261,16 +204,68 @@ validate validator input = gValidate validator
                                      (Proxy :: Proxy inputRL)
                                      (Proxy :: Proxy outputRL)
 
-subinput = {b: 17}
-input = {a: subinput }
+
+atLeast :: forall a. Int -> Int -> ValidationResult Void
+atLeast x y = if x <= y then Ok else FieldError "too small"
+
+lengthAtLeast x y = if x <= Ary.length y then Ok else FieldError "too few elements"
+
+atMost :: forall a. Int -> Int -> ValidationResult a
+atMost x y = if x < y then Ok else FieldError "too big"
+
+notEmpty :: forall a. String -> ValidationResult Void
+notEmpty s = if s == "" then FieldError "empty" else Ok
 
 
-subvalidator = { b: [greaterThan 17]}
+each :: forall validatorRow validatorRL inputRow inputRL outputRow outputRL
+      . GValidate validatorRL validatorRow inputRL inputRow outputRL outputRow
+     => RowToList validatorRow validatorRL
+     => RowToList inputRow inputRL
+     => RowToList outputRow outputRL
+     => AllErrorsEmpty outputRL outputRow
+     => Eq (Record outputRow)
+     => Record validatorRow
+     -> Array (Record inputRow)
+     -> ValidationResult (Record outputRow)
+each validator xs = childrenErrors # List.toUnfoldable
+                                   # (\x -> if Ary.null x then Ok else ChildrenErrors x)
+  where childrenErrors = foldrWithIndex go List.Nil xs
+        go i (x :: Record inputRow) acc =
+                     let errs = validate validator x
+                         isValid = allErrorsEmpty (Proxy :: Proxy outputRL) errs
+                     in if isValid
+                        then acc
+                        else List.Cons { index: i, childErrors: errs } acc
 
-validator = { a: subvalidator }
+isValid :: forall row rl. RowToList row rl
+                       => AllErrorsEmpty rl row
+                       => Record row
+                       -> Boolean
+isValid errs = allErrorsEmpty (Proxy :: Proxy rl) errs
 
-errors = { y: [ Ok ] }
 
+class AllErrorsEmpty rl row | rl -> row where
+  allErrorsEmpty :: Proxy rl -> Record row -> Boolean
 
--- blah :: { y :: Array ValidationResult }
-blah = validate validator input
+instance AllErrorsEmpty Nil () where
+  allErrorsEmpty _ _ = true
+
+else instance ( IsSymbol l
+          , RowToList row rl
+          , RowToList row (Cons l (Array trash) restRL)
+          , RowToList restRow restRL
+          , Cons l (Array trash) restRow row
+          , Lacks l restRow
+          , AllErrorsEmpty restRL restRow
+         )
+         => AllErrorsEmpty (Cons l (Array trash) restRL) row where
+  allErrorsEmpty _ rec = Ary.null field && allErrorsEmpty rec'Proxy rec'
+    where proxy :: Proxy l
+          proxy = Proxy
+
+          field = R.get proxy rec
+          rec' = R.delete proxy rec
+          rec'Proxy = Proxy :: Proxy restRL
+
+else instance AllErrorsEmpty a b where
+  allErrorsEmpty _ _ = false
