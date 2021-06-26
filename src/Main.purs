@@ -89,6 +89,7 @@ else instance
   ( RowToList inputRow inputRL
 
   , IsSymbol l
+  , ThreeWay validatorRL inputRL outputRL
   , RowToList validatorRow validatorRL
   , RowToList validatorRow (Cons l (Record subValidatorRow) validatorRLRest)
   , RowToList subValidatorRow subValidatorRL
@@ -151,6 +152,7 @@ else instance
 else instance
   ( RowToList inputRow inputRL
   , Cons l ty inputRowRest inputRow
+  , ThreeWay validatorRL inputRL outputRL
 
   , IsSymbol l
   , RowToList validatorRow validatorRL

@@ -19,6 +19,7 @@ studentValidator = { name: [ notEmpty ], age: [ atLeast 5] }
 
 schoolValidator = { name: [ Str.length >>> atLeast 5]
                   , age: [ atLeast 6 ]
+                  , asdf: []
                   , students: [ lengthAtLeast 5
                               , each studentValidator ]
                   }
