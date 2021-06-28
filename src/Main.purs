@@ -185,7 +185,7 @@ else instance
         fieldErrors = map (_ $ fieldValue) fieldValidators # removeOks
         validatorRest = R.delete proxy validator
         restErrors = gValidate validatorRest
-                               (Proxy :: Proxy validatorRLRest )
+                               (Proxy :: Proxy validatorRLRest)
                                input
                                (Proxy :: Proxy inputRL)
                                (Proxy :: Proxy outputRLRest)
@@ -252,21 +252,21 @@ instance AllErrorsEmpty Nil () where
   allErrorsEmpty _ _ = true
 
 else instance ( IsSymbol l
-          , RowToList row rl
-          , RowToList row (Cons l (Array trash) restRL)
-          , RowToList restRow restRL
-          , Cons l (Array trash) restRow row
-          , Lacks l restRow
-          , AllErrorsEmpty restRL restRow
-         )
-         => AllErrorsEmpty (Cons l (Array trash) restRL) row where
-  allErrorsEmpty _ rec = Ary.null field && allErrorsEmpty rec'Proxy rec'
+              , RowToList row rl
+              , RowToList row (Cons l (Array trash) restRL)
+              , RowToList restRow restRL
+              , Cons l (Array trash) restRow row
+              , Lacks l restRow
+              , AllErrorsEmpty restRL restRow
+              )
+             => AllErrorsEmpty (Cons l (Array trash) restRL) row where
+  allErrorsEmpty _ rec = if Ary.null field
+                           then allErrorsEmpty (Proxy :: Proxy restRL) (R.delete proxy rec)
+                           else false
     where proxy :: Proxy l
           proxy = Proxy
 
           field = R.get proxy rec
-          rec' = R.delete proxy rec
-          rec'Proxy = Proxy :: Proxy restRL
 
 else instance AllErrorsEmpty a b where
   allErrorsEmpty _ _ = false
