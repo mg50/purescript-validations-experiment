@@ -35,9 +35,11 @@ class ThreeWay :: forall validatorRL inputRL outputRL.
                   validatorRL -> inputRL -> outputRL -> Constraint
 class ThreeWay validatorRL inputRL outputRL | validatorRL inputRL -> outputRL
 
-instance ThreeWay Nil a Nil
+instance ThreeWay Nil Nil Nil
 
-instance ( IsSymbol l
+instance ( IsSymbol l ) => ThreeWay Nil (Cons l a restRL) Nil
+
+else instance ( IsSymbol l
          , ThreeWay validatorRL inputRL outputRL
          , RowToList validatorRow validatorRL
          , RowToList inputRow inputRL
@@ -52,14 +54,12 @@ else instance ( IsSymbol l )
                          (Cons l (Array inputTy) anything)
                          (Cons l outputTy Nil)
 
-else instance ( IsSymbol l1
-              , IsSymbol l2
-              , ThreeWay (Cons l1 a Nil) rest (Cons l1 c Nil)
-              , ThreeWay validatorRestRL inputRestRL outputRestRL
+else instance ( IsSymbol l
+              , ThreeWay validatorRL inputRestRL outputRL
               )
-             => ThreeWay (Cons l1 a validatorRestRL)
-                         (Cons l2 b inputRestRL)
-                         (Cons l1 c outputRestRL)
+             => ThreeWay validatorRL
+                         (Cons l b inputRestRL)
+                         outputRL
 
 
 class GValidate (validatorRL :: RowList Type)
@@ -152,7 +152,6 @@ else instance
 else instance
   ( RowToList inputRow inputRL
   , Cons l ty inputRowRest inputRow
-  , ThreeWay validatorRL inputRL outputRL
 
   , IsSymbol l
   , RowToList validatorRow validatorRL
